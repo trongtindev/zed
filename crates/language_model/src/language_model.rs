@@ -67,7 +67,7 @@ pub enum LanguageModelCompletionEvent {
 }
 
 /// Indicates the format used to define the input schema for a language model tool.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub enum LanguageModelToolSchemaFormat {
     /// A JSON schema, see https://json-schema.org
     JsonSchema,
@@ -97,7 +97,10 @@ pub struct TokenUsage {
 
 impl TokenUsage {
     pub fn total_tokens(&self) -> u32 {
-        self.input_tokens + self.output_tokens
+        self.input_tokens
+            + self.output_tokens
+            + self.cache_read_input_tokens
+            + self.cache_creation_input_tokens
     }
 }
 
