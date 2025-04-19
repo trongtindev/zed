@@ -4,7 +4,7 @@ use credentials_provider::CredentialsProvider;
 use editor::{Editor, EditorElement, EditorStyle};
 use futures::{FutureExt, Stream, StreamExt, future::BoxFuture};
 use google_ai::{
-    FunctionDeclaration, GenerateContentResponse, Part, SystemInstructions, UsageMetadata,
+    FunctionDeclaration, GenerateContentResponse, Part, SystemInstruction, UsageMetadata,
 };
 use gpui::{
     AnyView, App, AsyncApp, Context, Entity, FontStyle, Subscription, Task, TextStyle, WhiteSpace,
@@ -405,7 +405,7 @@ pub fn into_google(
         .map_or(false, |msg| matches!(msg.role, Role::System))
     {
         let message = request.messages.remove(0);
-        Some(SystemInstructions {
+        Some(SystemInstruction {
             parts: map_content(message.content),
         })
     } else {
@@ -414,7 +414,7 @@ pub fn into_google(
 
     google_ai::GenerateContentRequest {
         model,
-        system_instructions,
+        system_instruction: system_instructions,
         contents: request
             .messages
             .into_iter()
@@ -740,7 +740,7 @@ impl Render for ConfigurationView {
                         .py_1()
                         .bg(cx.theme().colors().editor_background)
                         .border_1()
-                        .border_color(cx.theme().colors().border_variant)
+                        .border_color(cx.theme().colors().border)
                         .rounded_sm()
                         .child(self.render_api_key_editor(cx)),
                 )
@@ -753,8 +753,13 @@ impl Render for ConfigurationView {
                 .into_any()
         } else {
             h_flex()
-                .size_full()
+                .mt_1()
+                .p_1()
                 .justify_between()
+                .rounded_md()
+                .border_1()
+                .border_color(cx.theme().colors().border)
+                .bg(cx.theme().colors().background)
                 .child(
                     h_flex()
                         .gap_1()
@@ -766,7 +771,8 @@ impl Render for ConfigurationView {
                         })),
                 )
                 .child(
-                    Button::new("reset-key", "Reset key")
+                    Button::new("reset-key", "Reset Key")
+                        .label_size(LabelSize::Small)
                         .icon(Some(IconName::Trash))
                         .icon_size(IconSize::Small)
                         .icon_position(IconPosition::Start)

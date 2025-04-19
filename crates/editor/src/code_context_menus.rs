@@ -632,6 +632,7 @@ impl CompletionsMenu {
                     MarkdownElement::new(markdown.clone(), hover_markdown_style(window, cx))
                         .code_block_renderer(markdown::CodeBlockRenderer::Default {
                             copy_button: false,
+                            border: false,
                         })
                         .on_url_click(open_markdown_url),
                 )
@@ -774,13 +775,36 @@ pub struct AvailableCodeAction {
     pub provider: Rc<dyn CodeActionProvider>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct CodeActionContents {
-    pub tasks: Option<Rc<ResolvedTasks>>,
-    pub actions: Option<Rc<[AvailableCodeAction]>>,
+    tasks: Option<Rc<ResolvedTasks>>,
+    actions: Option<Rc<[AvailableCodeAction]>>,
 }
 
 impl CodeActionContents {
+    pub fn new(
+        mut tasks: Option<ResolvedTasks>,
+        actions: Option<Rc<[AvailableCodeAction]>>,
+        cx: &App,
+    ) -> Self {
+        if !cx.has_flag::<Debugger>() {
+            if let Some(tasks) = &mut tasks {
+                tasks
+                    .templates
+                    .retain(|(_, task)| !matches!(task.task_type(), task::TaskType::Debug(_)));
+            }
+        }
+
+        Self {
+            tasks: tasks.map(Rc::new),
+            actions,
+        }
+    }
+
+    pub fn tasks(&self) -> Option<&ResolvedTasks> {
+        self.tasks.as_deref()
+    }
+
     fn len(&self) -> usize {
         match (&self.tasks, &self.actions) {
             (Some(tasks), Some(actions)) => actions.len() + tasks.templates.len(),
@@ -790,7 +814,7 @@ impl CodeActionContents {
         }
     }
 
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         match (&self.tasks, &self.actions) {
             (Some(tasks), Some(actions)) => actions.is_empty() && tasks.templates.is_empty(),
             (Some(tasks), None) => tasks.templates.is_empty(),
@@ -799,7 +823,7 @@ impl CodeActionContents {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = CodeActionsItem> + '_ {
+    fn iter(&self) -> impl Iterator<Item = CodeActionsItem> + '_ {
         self.tasks
             .iter()
             .flat_map(|tasks| {
@@ -867,14 +891,14 @@ pub enum CodeActionsItem {
 }
 
 impl CodeActionsItem {
-    pub fn as_task(&self) -> Option<&ResolvedTask> {
+    fn as_task(&self) -> Option<&ResolvedTask> {
         let Self::Task(_, task) = self else {
             return None;
         };
         Some(task)
     }
 
-    pub fn as_code_action(&self) -> Option<&CodeAction> {
+    fn as_code_action(&self) -> Option<&CodeAction> {
         let Self::CodeAction { action, .. } = self else {
             return None;
         };
@@ -988,17 +1012,6 @@ impl CodeActionsMenu {
                     .iter()
                     .skip(range.start)
                     .take(range.end - range.start)
-                    .filter(|action| {
-                        if action
-                            .as_task()
-                            .map(|task| matches!(task.task_type(), task::TaskType::Debug(_)))
-                            .unwrap_or(false)
-                        {
-                            cx.has_flag::<Debugger>()
-                        } else {
-                            true
-                        }
-                    })
                     .enumerate()
                     .map(|(ix, action)| {
                         let item_ix = range.start + ix;
@@ -1014,7 +1027,6 @@ impl CodeActionsMenu {
                                         if let Some(task) = editor.confirm_code_action(
                                             &ConfirmCodeAction {
                                                 item_ix: Some(item_ix),
-                                                from_mouse_context_menu: false,
                                             },
                                             window,
                                             cx,
@@ -1040,7 +1052,6 @@ impl CodeActionsMenu {
                                         if let Some(task) = editor.confirm_code_action(
                                             &ConfirmCodeAction {
                                                 item_ix: Some(item_ix),
-                                                from_mouse_context_menu: false,
                                             },
                                             window,
                                             cx,
