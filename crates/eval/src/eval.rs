@@ -1,13 +1,15 @@
 mod example;
 mod ids;
+mod tool_metrics;
 
-use client::{Client, ProxySettings, UserStore};
 pub(crate) use example::*;
-use telemetry;
+pub(crate) use tool_metrics::*;
 
 use ::fs::RealFs;
 use anyhow::{Result, anyhow};
 use clap::Parser;
+use client::{Client, ProxySettings, UserStore};
+use collections::HashSet;
 use extension::ExtensionHostProxy;
 use futures::{StreamExt, future};
 use gpui::http_client::{Uri, read_proxy_from_env};
@@ -22,7 +24,6 @@ use prompt_store::PromptBuilder;
 use release_channel::AppVersion;
 use reqwest_client::ReqwestClient;
 use settings::{Settings, SettingsStore};
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::usize;
@@ -39,8 +40,8 @@ struct Args {
     /// Model to use (default: "claude-3-7-sonnet-latest")
     #[arg(long, default_value = "claude-3-7-sonnet-latest")]
     model: String,
-    #[arg(long, value_delimiter = ',')]
-    languages: Option<Vec<String>>,
+    #[arg(long, value_delimiter = ',', default_value = "rs,ts")]
+    languages: Vec<String>,
     /// How many times to run each example. Note that this is currently not very efficient as N
     /// worktrees will be created for the examples.
     #[arg(long, default_value = "1")]
@@ -58,7 +59,6 @@ fn main() {
 
     let args = Args::parse();
     let all_available_examples = list_all_examples().unwrap();
-    let languages = args.languages.unwrap_or_else(|| vec!["rs".to_string()]);
 
     let example_paths = all_available_examples
         .iter()
@@ -91,6 +91,8 @@ fn main() {
             .client
             .telemetry()
             .start(system_id, installation_id, session_id, cx);
+
+        let mut cumulative_tool_metrics = ToolMetrics::default();
 
         let model_registry = LanguageModelRegistry::read_global(cx);
         let model = find_model("claude-3-7-sonnet-latest", model_registry, cx).unwrap();
@@ -148,7 +150,7 @@ fn main() {
                     .base
                     .language_extension
                     .as_ref()
-                    .map_or(false, |lang| languages.contains(lang))
+                    .map_or(false, |lang| args.languages.contains(lang))
                 {
                     skipped.push(example.name);
                     continue;
@@ -177,7 +179,7 @@ fn main() {
                 return cx.update(|cx| cx.quit());
             }
 
-            let mut repo_urls = HashSet::new();
+            let mut repo_urls = HashSet::default();
             let mut clone_tasks = Vec::new();
 
             for (i, example) in examples.iter_mut().enumerate() {
@@ -244,9 +246,24 @@ fn main() {
                 let model = model.clone();
                 let example = example.clone();
                 cx.spawn(async move |cx| {
-                    let result =
-                        run_example(&example, model, app_state, judge_repetitions, cx).await;
-                    (result, example)
+                    let result = async {
+                        let run_output = cx
+                            .update(|cx| example.run(model.clone(), app_state.clone(), cx))?
+                            .await?;
+                        let judge_tasks = (0..judge_repetitions).map(|round| {
+                            run_judge_repetition(
+                                example.clone(),
+                                model.clone(),
+                                &run_output,
+                                round,
+                                cx,
+                            )
+                        });
+                        let judge_outputs = future::join_all(judge_tasks).await;
+                        anyhow::Ok((run_output, judge_outputs))
+                    }
+                    .await;
+                    (example, result)
                 })
             });
 
@@ -256,52 +273,58 @@ fn main() {
                 .await;
 
             println!("\n\n");
-            println!("========================================");
-            println!("              EVAL RESULTS              ");
-            println!("========================================");
-            println!("");
+            print_header("EVAL RESULTS");
 
             let mut diff_scores = Vec::new();
             let mut thread_scores = Vec::new();
             let mut error_count = 0;
 
-            for (result, example) in results {
+            for (example, result) in results {
+                print_header(&example.name);
+
                 match result {
                     Err(err) => {
                         println!("💥 {}{:?}", example.log_prefix, err);
                         error_count += 1;
                     }
-                    Ok(judge_results) => {
-                        for judge_result in judge_results {
+                    Ok((run_output, judge_results)) => {
+                        cumulative_tool_metrics.merge(&run_output.tool_metrics);
+
+                        println!("┌───────┬──────┬────────┐");
+                        println!("│ Judge │ Diff │ Thread │");
+                        println!("├───────┼──────┼────────┤");
+
+                        for (i, judge_result) in judge_results.iter().enumerate() {
                             match judge_result {
                                 Ok(judge_output) => {
-                                    const SCORES: [&str; 6] = ["💀", "😭", "😔", "😐", "🙂", "🤩"];
-                                    let diff_score: u32 = judge_output.diff.score;
-                                    let score_index = (diff_score.min(5)) as usize;
+                                    let diff_score = judge_output.diff.score;
+                                    diff_scores.push(diff_score);
+
+                                    let thread_display = if let Some(thread) = &judge_output.thread
+                                    {
+                                        let thread_score = thread.score;
+                                        thread_scores.push(thread_score);
+                                        format!("{}", thread_score)
+                                    } else {
+                                        "N/A".to_string()
+                                    };
 
                                     println!(
-                                        "{} {}{} (Diff)",
-                                        SCORES[score_index],
-                                        example.log_prefix,
-                                        judge_output.diff.score,
+                                        "|{:^7}│{:^6}│{:^8}│",
+                                        i + 1,
+                                        diff_score,
+                                        thread_display
                                     );
-                                    diff_scores.push(judge_output.diff.score);
-
-                                    if let Some(thread) = judge_output.thread {
-                                        let process_score: u32 = thread.score;
-                                        let score_index = (process_score.min(5)) as usize;
-                                        println!(
-                                            "{} {}{} (Thread)",
-                                            SCORES[score_index], example.log_prefix, thread.score,
-                                        );
-                                        thread_scores.push(thread.score);
-                                    }
                                 }
                                 Err(err) => {
-                                    println!("💥 {}{:?}", example.log_prefix, err);
+                                    println!("|{:^7}│{:^6}│{:^8}│{:?}", i + 1, "N/A", "N/A", err);
                                 }
                             }
                         }
+
+                        println!("└───────┴──────┴────────┘");
+
+                        println!("{}", run_output.tool_metrics);
                     }
                 }
                 println!(
@@ -341,6 +364,9 @@ fn main() {
                 }
             }
 
+            print_header("CUMULATIVE TOOL METRICS");
+            println!("{}", cumulative_tool_metrics);
+
             std::thread::sleep(std::time::Duration::from_secs(2));
 
             app_state.client.telemetry().flush_events();
@@ -349,27 +375,6 @@ fn main() {
         })
         .detach_and_log_err(cx);
     });
-}
-
-async fn run_example(
-    example: &Example,
-    model: Arc<dyn LanguageModel>,
-    app_state: Arc<AgentAppState>,
-    judge_repetitions: u32,
-    cx: &mut AsyncApp,
-) -> Result<Vec<Result<JudgeOutput>>> {
-    let run_output = cx
-        .update(|cx| example.run(model.clone(), app_state.clone(), cx))?
-        .await?;
-
-    let judge_tasks = (0..judge_repetitions)
-        .map(|round| run_judge_repetition(example.clone(), model.clone(), &run_output, round, cx));
-
-    let results = future::join_all(judge_tasks).await;
-
-    app_state.client.telemetry().flush_events();
-
-    Ok(results)
 }
 
 fn list_all_examples() -> Result<Vec<PathBuf>> {
@@ -566,7 +571,7 @@ async fn run_judge_repetition(
                 diff_analysis = judge_output.diff.analysis,
                 thread_score = thread.score,
                 thread_analysis = thread.analysis,
-                tool_use_counts = run_output.tool_use_counts,
+                tool_metrics = run_output.tool_metrics,
                 response_count = run_output.response_count,
                 token_usage = run_output.token_usage,
                 model = model.telemetry_id(),
@@ -585,7 +590,7 @@ async fn run_judge_repetition(
                 round = round,
                 diff_score = judge_output.diff.score,
                 diff_analysis = judge_output.diff.analysis,
-                tool_use_counts = run_output.tool_use_counts,
+                tool_metrics = run_output.tool_metrics,
                 response_count = run_output.response_count,
                 token_usage = run_output.token_usage,
                 model = model.telemetry_id(),
@@ -600,4 +605,10 @@ async fn run_judge_repetition(
     }
 
     judge_result
+}
+
+fn print_header(header: &str) {
+    println!("\n========================================");
+    println!("{:^40}", header);
+    println!("========================================\n");
 }
