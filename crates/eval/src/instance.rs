@@ -218,8 +218,14 @@ impl ExampleInstance {
         });
 
         let tools = cx.new(|_| ToolWorkingSet::default());
-        let thread_store =
-            ThreadStore::load(project.clone(), tools, app_state.prompt_builder.clone(), cx);
+        let prompt_store = None;
+        let thread_store = ThreadStore::load(
+            project.clone(),
+            tools,
+            prompt_store,
+            app_state.prompt_builder.clone(),
+            cx,
+        );
         let meta = self.thread.meta();
         let this = self.clone();
 
@@ -1030,14 +1036,11 @@ impl ThreadDialog {
                     current_text.push_str(text);
                 }
 
-                // TODO: Tool use is currently broken, both here and in Markdown output.
-                // Specifically, we get a stream of partial `tool_use` messages,
-                // each of which gets logged individually. A simple fix is to log
-                // just the final message, but we also need to make sure that
-                // this behavior doesn't happen in the actual assistant thread.
                 Ok(LanguageModelCompletionEvent::ToolUse(tool_use)) => {
                     flush_text(&mut current_text, &mut content);
-                    content.push(MessageContent::ToolUse(tool_use.clone()));
+                    if tool_use.is_input_complete {
+                        content.push(MessageContent::ToolUse(tool_use.clone()));
+                    }
                 }
                 Ok(LanguageModelCompletionEvent::Thinking { text, signature }) => {
                     flush_text(&mut current_text, &mut content);
