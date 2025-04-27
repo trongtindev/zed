@@ -1964,7 +1964,7 @@ impl Thread {
                             };
 
                             let remote_url = backend.remote_url("origin");
-                            let head_sha = backend.head_sha();
+                            let head_sha = backend.head_sha().await;
                             let diff = backend.diff(DiffType::HeadToWorktree).await.ok();
 
                             GitState {
@@ -2097,7 +2097,7 @@ impl Thread {
     }
 
     pub fn auto_capture_telemetry(&mut self, cx: &mut Context<Self>) {
-        if !cx.has_flag::<feature_flags::ThreadAutoCapture>() {
+        if !cx.has_flag::<feature_flags::ThreadAutoCaptureFeatureFlag>() {
             return;
         }
 

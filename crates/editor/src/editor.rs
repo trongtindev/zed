@@ -71,7 +71,7 @@ use element::{AcceptEditPredictionBinding, LineWithInvisibles, PositionMap, layo
 pub use element::{
     CursorLayout, EditorElement, HighlightedRange, HighlightedRangeLine, PointForPosition,
 };
-use feature_flags::{Debugger, FeatureFlagAppExt};
+use feature_flags::{DebuggerFeatureFlag, FeatureFlagAppExt};
 use futures::{
     FutureExt,
     future::{self, Shared, join},
@@ -4733,6 +4733,8 @@ impl Editor {
             .as_ref()
             .map_or(true, |provider| provider.filter_completions());
 
+        let snippet_sort_order = EditorSettings::get_global(cx).snippet_sort_order;
+
         let id = post_inc(&mut self.next_completion_id);
         let task = cx.spawn_in(window, async move |editor, cx| {
             async move {
@@ -4780,6 +4782,7 @@ impl Editor {
                         position,
                         buffer.clone(),
                         completions.into(),
+                        snippet_sort_order,
                     );
 
                     menu.filter(
@@ -5086,6 +5089,7 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let quick_launch = action.quick_launch;
         let mut context_menu = self.context_menu.borrow_mut();
         if let Some(CodeContextMenu::CodeActions(code_actions)) = context_menu.as_ref() {
             if code_actions.deployed_from_indicator == action.deployed_from_indicator {
@@ -5159,8 +5163,6 @@ impl Editor {
                                 Self::build_tasks_context(&project, &buffer, buffer_row, tasks, cx)
                             });
 
-                    let debugger_flag = cx.has_flag::<Debugger>();
-
                     Some(cx.spawn_in(window, async move |editor, cx| {
                         let task_context = match task_context {
                             Some(task_context) => task_context.await,
@@ -5168,7 +5170,7 @@ impl Editor {
                         };
                         let resolved_tasks =
                             tasks
-                                .zip(task_context)
+                                .zip(task_context.clone())
                                 .map(|(tasks, task_context)| ResolvedTasks {
                                     templates: tasks.resolve(&task_context).collect(),
                                     position: snapshot.buffer_snapshot.anchor_before(Point::new(
@@ -5176,22 +5178,49 @@ impl Editor {
                                         tasks.column,
                                     )),
                                 });
-                        let spawn_straight_away = resolved_tasks.as_ref().map_or(false, |tasks| {
-                            tasks
-                                .templates
-                                .iter()
-                                .filter(|task| {
-                                    if matches!(task.1.task_type(), task::TaskType::Debug(_)) {
-                                        debugger_flag
-                                    } else {
-                                        true
-                                    }
+                        let spawn_straight_away = quick_launch
+                            && resolved_tasks
+                                .as_ref()
+                                .map_or(false, |tasks| tasks.templates.len() == 1)
+                            && code_actions
+                                .as_ref()
+                                .map_or(true, |actions| actions.is_empty());
+                        let debug_scenarios = editor.update(cx, |editor, cx| {
+                            if cx.has_flag::<DebuggerFeatureFlag>() {
+                                maybe!({
+                                    let project = editor.project.as_ref()?;
+                                    let dap_store = project.read(cx).dap_store();
+                                    let mut scenarios = vec![];
+                                    let resolved_tasks = resolved_tasks.as_ref()?;
+                                    let debug_adapter: SharedString = buffer
+                                        .read(cx)
+                                        .language()?
+                                        .context_provider()?
+                                        .debug_adapter()?
+                                        .into();
+                                    dap_store.update(cx, |this, cx| {
+                                        for (_, task) in &resolved_tasks.templates {
+                                            if let Some(scenario) = this
+                                                .debug_scenario_for_build_task(
+                                                    task.resolved.clone(),
+                                                    SharedString::from(
+                                                        task.original_task().label.clone(),
+                                                    ),
+                                                    debug_adapter.clone(),
+                                                    cx,
+                                                )
+                                            {
+                                                scenarios.push(scenario);
+                                            }
+                                        }
+                                    });
+                                    Some(scenarios)
                                 })
-                                .count()
-                                == 1
-                        }) && code_actions
-                            .as_ref()
-                            .map_or(true, |actions| actions.is_empty());
+                                .unwrap_or_default()
+                            } else {
+                                vec![]
+                            }
+                        })?;
                         if let Ok(task) = editor.update_in(cx, |editor, window, cx| {
                             *editor.context_menu.borrow_mut() =
                                 Some(CodeContextMenu::CodeActions(CodeActionsMenu {
@@ -5199,7 +5228,8 @@ impl Editor {
                                     actions: CodeActionContents::new(
                                         resolved_tasks,
                                         code_actions,
-                                        cx,
+                                        debug_scenarios,
+                                        task_context.unwrap_or_default(),
                                     ),
                                     selected_item: Default::default(),
                                     scroll_handle: UniformListScrollHandle::default(),
@@ -5259,25 +5289,17 @@ impl Editor {
 
         match action {
             CodeActionsItem::Task(task_source_kind, resolved_task) => {
-                match resolved_task.task_type() {
-                    task::TaskType::Script => workspace.update(cx, |workspace, cx| {
-                        workspace.schedule_resolved_task(
-                            task_source_kind,
-                            resolved_task,
-                            false,
-                            window,
-                            cx,
-                        );
+                workspace.update(cx, |workspace, cx| {
+                    workspace.schedule_resolved_task(
+                        task_source_kind,
+                        resolved_task,
+                        false,
+                        window,
+                        cx,
+                    );
 
-                        Some(Task::ready(Ok(())))
-                    }),
-                    task::TaskType::Debug(_) => {
-                        workspace.update(cx, |workspace, cx| {
-                            workspace.schedule_debug_task(resolved_task, window, cx);
-                        });
-                        Some(Task::ready(Ok(())))
-                    }
-                }
+                    Some(Task::ready(Ok(())))
+                })
             }
             CodeActionsItem::CodeAction {
                 excerpt_id,
@@ -5298,6 +5320,14 @@ impl Editor {
                     )
                     .await
                 }))
+            }
+            CodeActionsItem::DebugScenario(scenario) => {
+                let context = actions_menu.actions.context.clone();
+
+                workspace.update(cx, |workspace, cx| {
+                    workspace.start_debug_session(scenario, context, Some(buffer), window, cx);
+                });
+                Some(Task::ready(Ok(())))
             }
         }
     }
@@ -6657,6 +6687,7 @@ impl Editor {
                                     "Toggle Code Actions",
                                     &ToggleCodeActions {
                                         deployed_from_indicator: None,
+                                        quick_launch: false,
                                     },
                                     &focus_handle,
                                     window,
@@ -6665,11 +6696,13 @@ impl Editor {
                             }
                         })
                     })
-                    .on_click(cx.listener(move |editor, _e, window, cx| {
+                    .on_click(cx.listener(move |editor, e: &ClickEvent, window, cx| {
+                        let quick_launch = e.down.button == MouseButton::Left;
                         window.focus(&editor.focus_handle(cx));
                         editor.toggle_code_actions(
                             &ToggleCodeActions {
                                 deployed_from_indicator: Some(row),
+                                quick_launch,
                             },
                             window,
                             cx,
@@ -7047,7 +7080,7 @@ impl Editor {
             let context = task_context.await?;
             let (task_source_kind, mut resolved_task) = tasks.resolve(&context).next()?;
 
-            let resolved = resolved_task.resolved.as_mut()?;
+            let resolved = &mut resolved_task.resolved;
             resolved.reveal = reveal_strategy;
 
             workspace
@@ -7137,11 +7170,13 @@ impl Editor {
             .icon_size(IconSize::XSmall)
             .icon_color(color)
             .toggle_state(is_active)
-            .on_click(cx.listener(move |editor, _e, window, cx| {
+            .on_click(cx.listener(move |editor, e: &ClickEvent, window, cx| {
+                let quick_launch = e.down.button == MouseButton::Left;
                 window.focus(&editor.focus_handle(cx));
                 editor.toggle_code_actions(
                     &ToggleCodeActions {
                         deployed_from_indicator: Some(row),
+                        quick_launch,
                     },
                     window,
                     cx,
@@ -8229,10 +8264,18 @@ impl Editor {
         let buffer_id = selection.start.buffer_id.unwrap();
         let buffer = self.buffer().read(cx).buffer(buffer_id);
         let id = post_inc(&mut self.next_completion_id);
+        let snippet_sort_order = EditorSettings::get_global(cx).snippet_sort_order;
 
         if let Some(buffer) = buffer {
             *self.context_menu.borrow_mut() = Some(CodeContextMenu::Completions(
-                CompletionsMenu::new_snippet_choices(id, true, choices, selection, buffer),
+                CompletionsMenu::new_snippet_choices(
+                    id,
+                    true,
+                    choices,
+                    selection,
+                    buffer,
+                    snippet_sort_order,
+                ),
             ));
         }
     }
@@ -9150,7 +9193,7 @@ impl Editor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !cx.has_flag::<Debugger>() {
+        if !cx.has_flag::<DebuggerFeatureFlag>() {
             return;
         }
         let source = self

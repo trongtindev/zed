@@ -30,7 +30,7 @@ use crate::{
 use buffer_diff::{DiffHunkStatus, DiffHunkStatusKind};
 use client::ParticipantIndex;
 use collections::{BTreeMap, HashMap};
-use feature_flags::{Debugger, FeatureFlagAppExt};
+use feature_flags::{DebuggerFeatureFlag, FeatureFlagAppExt};
 use file_icons::FileIcons;
 use git::{
     Oid,
@@ -547,7 +547,7 @@ impl EditorElement {
         register_action(editor, window, Editor::insert_uuid_v4);
         register_action(editor, window, Editor::insert_uuid_v7);
         register_action(editor, window, Editor::open_selections_in_multibuffer);
-        if cx.has_flag::<Debugger>() {
+        if cx.has_flag::<DebuggerFeatureFlag>() {
             register_action(editor, window, Editor::toggle_breakpoint);
             register_action(editor, window, Editor::edit_log_breakpoint);
             register_action(editor, window, Editor::enable_breakpoint);
@@ -2771,19 +2771,21 @@ impl EditorElement {
                         text_x + layout.width,
                     ))
                 };
-                x_position = if rows.contains(&align_to.row()) {
-                    x_and_width(&line_layouts[align_to.row().minus(rows.start) as usize])
-                } else {
-                    x_and_width(&layout_line(
-                        align_to.row(),
-                        snapshot,
-                        &self.style,
-                        editor_width,
-                        is_row_soft_wrapped,
-                        window,
-                        cx,
-                    ))
-                };
+                let line_ix = align_to.row().0.checked_sub(rows.start.0);
+                x_position =
+                    if let Some(layout) = line_ix.and_then(|ix| line_layouts.get(ix as usize)) {
+                        x_and_width(&layout)
+                    } else {
+                        x_and_width(&layout_line(
+                            align_to.row(),
+                            snapshot,
+                            &self.style,
+                            editor_width,
+                            is_row_soft_wrapped,
+                            window,
+                            cx,
+                        ))
+                    };
 
                 let anchor_x = x_position.unwrap().0;
 
@@ -7037,7 +7039,7 @@ impl Element for EditorElement {
                     let mut breakpoint_rows = self.editor.update(cx, |editor, cx| {
                         editor.active_breakpoints(start_row..end_row, window, cx)
                     });
-                    if cx.has_flag::<Debugger>() {
+                    if cx.has_flag::<DebuggerFeatureFlag>() {
                         for display_row in breakpoint_rows.keys() {
                             active_rows.entry(*display_row).or_default().breakpoint = true;
                         }
@@ -7060,7 +7062,7 @@ impl Element for EditorElement {
                     // We add the gutter breakpoint indicator to breakpoint_rows after painting
                     // line numbers so we don't paint a line number debug accent color if a user
                     // has their mouse over that line when a breakpoint isn't there
-                    if cx.has_flag::<Debugger>() {
+                    if cx.has_flag::<DebuggerFeatureFlag>() {
                         let gutter_breakpoint_indicator =
                             self.editor.read(cx).gutter_breakpoint_indicator.0;
                         if let Some((gutter_breakpoint_point, _)) =
@@ -7576,7 +7578,7 @@ impl Element for EditorElement {
                     let show_breakpoints = snapshot
                         .show_breakpoints
                         .unwrap_or(gutter_settings.breakpoints);
-                    let breakpoints = if cx.has_flag::<Debugger>() && show_breakpoints {
+                    let breakpoints = if cx.has_flag::<DebuggerFeatureFlag>() && show_breakpoints {
                         self.layout_breakpoints(
                             line_height,
                             start_row..end_row,
