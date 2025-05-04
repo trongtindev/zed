@@ -121,6 +121,10 @@ impl TcpArguments {
 /// an optional build step is completed, we turn it's result into a DebugTaskDefinition by running a locator (or using a user-provided task) and resolving task variables.
 /// Finally, a [DebugTaskDefinition] has to be turned into a concrete debugger invocation ([DebugAdapterBinary]).
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(
+    any(feature = "test-support", test),
+    derive(serde::Deserialize, serde::Serialize)
+)]
 pub struct DebugTaskDefinition {
     pub label: SharedString,
     pub adapter: SharedString,
@@ -440,10 +444,7 @@ pub trait DebugAdapter: 'static + Send + Sync {
         log::info!("Getting latest version of debug adapter {}", self.name());
         delegate.update_status(self.name(), DapStatus::CheckingForUpdate);
         if let Some(version) = self.fetch_latest_adapter_version(delegate).await.log_err() {
-            log::info!(
-                "Installiing latest version of debug adapter {}",
-                self.name()
-            );
+            log::info!("Installing latest version of debug adapter {}", self.name());
             delegate.update_status(self.name(), DapStatus::Downloading);
             match self.install_binary(version, delegate).await {
                 Ok(_) => {
@@ -524,6 +525,7 @@ impl FakeAdapter {
             } else {
                 None
             },
+            "raw_request": serde_json::to_value(config).unwrap()
         });
         let request = match config.request {
             DebugRequest::Launch(_) => dap_types::StartDebuggingRequestArgumentsRequest::Launch,

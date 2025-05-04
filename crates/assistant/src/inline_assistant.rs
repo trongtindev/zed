@@ -37,7 +37,7 @@ use language_model::{
     ConfiguredModel, LanguageModel, LanguageModelRegistry, LanguageModelRequest,
     LanguageModelRequestMessage, LanguageModelTextStream, Role, report_assistant_event,
 };
-use language_model_selector::{LanguageModelSelector, LanguageModelSelectorPopoverMenu, ModelType};
+use language_model_selector::{LanguageModelSelector, LanguageModelSelectorPopoverMenu};
 use multi_buffer::MultiBufferRow;
 use parking_lot::Mutex;
 use project::{CodeAction, LspAction, ProjectTransaction};
@@ -1759,6 +1759,7 @@ impl PromptEditor {
             language_model_selector: cx.new(|cx| {
                 let fs = fs.clone();
                 LanguageModelSelector::new(
+                    |cx| LanguageModelRegistry::read_global(cx).default_model(),
                     move |model, cx| {
                         update_settings_file::<AssistantSettings>(
                             fs.clone(),
@@ -1766,7 +1767,6 @@ impl PromptEditor {
                             move |settings, _| settings.set_model(model.clone()),
                         );
                     },
-                    ModelType::Default,
                     window,
                     cx,
                 )
@@ -1815,10 +1815,6 @@ impl PromptEditor {
         self.editor = cx.new(|cx| {
             let mut editor = Editor::auto_height(Self::MAX_LINES as usize, window, cx);
             editor.set_soft_wrap_mode(language::language_settings::SoftWrap::EditorWidth, cx);
-            editor.set_placeholder_text(
-                Self::placeholder_text(self.codegen.read(cx), window, cx),
-                cx,
-            );
             editor.set_placeholder_text("Add a prompt…", cx);
             editor.set_text(prompt, window, cx);
             if focus {
@@ -2981,6 +2977,7 @@ impl CodegenAlternative {
         Ok(LanguageModelRequest {
             thread_id: None,
             prompt_id: None,
+            mode: None,
             messages,
             tools: Vec::new(),
             stop: Vec::new(),
@@ -3023,7 +3020,7 @@ impl CodegenAlternative {
             }
         }
 
-        let http_client = cx.http_client().clone();
+        let http_client = cx.http_client();
         let telemetry = self.telemetry.clone();
         let language_name = {
             let multibuffer = self.buffer.read(cx);

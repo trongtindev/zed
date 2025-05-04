@@ -39,8 +39,12 @@ pub use crate::telemetry::*;
 pub const ZED_CLOUD_PROVIDER_ID: &str = "zed.dev";
 
 pub fn init(client: Arc<Client>, cx: &mut App) {
-    registry::init(cx);
+    init_settings(cx);
     RefreshLlmTokenListener::register(client.clone(), cx);
+}
+
+pub fn init_settings(cx: &mut App) {
+    registry::init(cx);
 }
 
 /// The availability of a [`LanguageModel`].
@@ -60,9 +64,18 @@ pub struct LanguageModelCacheConfiguration {
     pub min_total_token: usize,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum CompletionRequestStatus {
+    Queued { position: usize },
+    Started,
+    ToolUseLimitReached,
+}
+
 /// A completion event from a language model.
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 pub enum LanguageModelCompletionEvent {
+    QueueUpdate(CompletionRequestStatus),
     Stop(StopReason),
     Text(String),
     Thinking {
@@ -240,6 +253,26 @@ pub trait LanguageModel: Send + Sync {
     /// Whether this model supports tools.
     fn supports_tools(&self) -> bool;
 
+    /// Returns whether this model supports "max mode";
+    fn supports_max_mode(&self) -> bool {
+        if self.provider_id().0 != ZED_CLOUD_PROVIDER_ID {
+            return false;
+        }
+
+        const MAX_MODE_CAPABLE_MODELS: &[CloudModel] = &[
+            CloudModel::Anthropic(anthropic::Model::Claude3_7Sonnet),
+            CloudModel::Anthropic(anthropic::Model::Claude3_7SonnetThinking),
+        ];
+
+        for model in MAX_MODE_CAPABLE_MODELS {
+            if self.id().0 == model.id() {
+                return true;
+            }
+        }
+
+        false
+    }
+
     fn tool_input_format(&self) -> LanguageModelToolSchemaFormat {
         LanguageModelToolSchemaFormat::JsonSchema
     }
@@ -325,6 +358,7 @@ pub trait LanguageModel: Send + Sync {
                         let last_token_usage = last_token_usage.clone();
                         async move {
                             match result {
+                                Ok(LanguageModelCompletionEvent::QueueUpdate { .. }) => None,
                                 Ok(LanguageModelCompletionEvent::StartMessage { .. }) => None,
                                 Ok(LanguageModelCompletionEvent::Text(text)) => Some(Ok(text)),
                                 Ok(LanguageModelCompletionEvent::Thinking { .. }) => None,
