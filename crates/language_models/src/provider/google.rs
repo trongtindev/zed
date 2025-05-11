@@ -12,8 +12,8 @@ use gpui::{
 use http_client::HttpClient;
 use language_model::{
     AuthenticateError, LanguageModelCompletionError, LanguageModelCompletionEvent,
-    LanguageModelToolSchemaFormat, LanguageModelToolUse, LanguageModelToolUseId, MessageContent,
-    StopReason,
+    LanguageModelToolChoice, LanguageModelToolSchemaFormat, LanguageModelToolUse,
+    LanguageModelToolUseId, MessageContent, StopReason,
 };
 use language_model::{
     LanguageModel, LanguageModelId, LanguageModelName, LanguageModelProvider,
@@ -313,6 +313,14 @@ impl LanguageModel for GoogleLanguageModel {
         true
     }
 
+    fn supports_tool_choice(&self, choice: LanguageModelToolChoice) -> bool {
+        match choice {
+            LanguageModelToolChoice::Auto
+            | LanguageModelToolChoice::Any
+            | LanguageModelToolChoice::None => true,
+        }
+    }
+
     fn tool_input_format(&self) -> LanguageModelToolSchemaFormat {
         LanguageModelToolSchemaFormat::JsonSchemaSubset
     }
@@ -344,9 +352,8 @@ impl LanguageModel for GoogleLanguageModel {
                 http_client.as_ref(),
                 &api_url,
                 &api_key,
-                &model_id,
                 google_ai::CountTokensRequest {
-                    contents: request.contents,
+                    generate_content_request: request,
                 },
             )
             .await?;
@@ -382,7 +389,7 @@ impl LanguageModel for GoogleLanguageModel {
 
 pub fn into_google(
     mut request: LanguageModelRequest,
-    model: String,
+    model_id: String,
 ) -> google_ai::GenerateContentRequest {
     fn map_content(content: Vec<MessageContent>) -> Vec<Part> {
         content
@@ -442,7 +449,7 @@ pub fn into_google(
     };
 
     google_ai::GenerateContentRequest {
-        model,
+        model: google_ai::ModelName { model_id },
         system_instruction: system_instructions,
         contents: request
             .messages
@@ -485,7 +492,16 @@ pub fn into_google(
                     .collect(),
             }]
         }),
-        tool_config: None,
+        tool_config: request.tool_choice.map(|choice| google_ai::ToolConfig {
+            function_calling_config: google_ai::FunctionCallingConfig {
+                mode: match choice {
+                    LanguageModelToolChoice::Auto => google_ai::FunctionCallingMode::Auto,
+                    LanguageModelToolChoice::Any => google_ai::FunctionCallingMode::Any,
+                    LanguageModelToolChoice::None => google_ai::FunctionCallingMode::None,
+                },
+                allowed_function_names: None,
+            },
+        }),
     }
 }
 
@@ -507,12 +523,18 @@ impl GoogleEventMapper {
         events: Pin<Box<dyn Send + Stream<Item = Result<GenerateContentResponse>>>>,
     ) -> impl Stream<Item = Result<LanguageModelCompletionEvent, LanguageModelCompletionError>>
     {
-        events.flat_map(move |event| {
-            futures::stream::iter(match event {
-                Ok(event) => self.map_event(event),
-                Err(error) => vec![Err(LanguageModelCompletionError::Other(anyhow!(error)))],
+        events
+            .map(Some)
+            .chain(futures::stream::once(async { None }))
+            .flat_map(move |event| {
+                futures::stream::iter(match event {
+                    Some(Ok(event)) => self.map_event(event),
+                    Some(Err(error)) => {
+                        vec![Err(LanguageModelCompletionError::Other(anyhow!(error)))]
+                    }
+                    None => vec![Ok(LanguageModelCompletionEvent::Stop(self.stop_reason))],
+                })
             })
-        })
     }
 
     pub fn map_event(
@@ -578,7 +600,6 @@ impl GoogleEventMapper {
         if wants_to_use_tool {
             self.stop_reason = StopReason::ToolUse;
         }
-        events.push(Ok(LanguageModelCompletionEvent::Stop(self.stop_reason)));
         events
     }
 }
