@@ -14,6 +14,7 @@ dependencies = [
  "gpui",
  "language",
  "project",
+ "proto",
  "release_channel",
  "smallvec",
  "ui",
@@ -55,7 +56,83 @@ version = "0.1.0"
 dependencies = [
  "agent_settings",
  "anyhow",
- "assistant_context_editor",
+ "assistant_context",
+ "assistant_tool",
+ "assistant_tools",
+ "chrono",
+ "client",
+ "collections",
+ "component",
+ "context_server",
+ "convert_case 0.8.0",
+ "feature_flags",
+ "fs",
+ "futures 0.3.31",
+ "git",
+ "gpui",
+ "heed",
+ "http_client",
+ "icons",
+ "indoc",
+ "itertools 0.14.0",
+ "language",
+ "language_model",
+ "log",
+ "paths",
+ "postage",
+ "pretty_assertions",
+ "project",
+ "prompt_store",
+ "proto",
+ "rand 0.8.5",
+ "ref-cast",
+ "rope",
+ "schemars",
+ "serde",
+ "serde_json",
+ "settings",
+ "smol",
+ "sqlez",
+ "telemetry",
+ "text",
+ "theme",
+ "thiserror 2.0.12",
+ "time",
+ "util",
+ "uuid",
+ "workspace",
+ "workspace-hack",
+ "zed_llm_client",
+ "zstd",
+]
+
+[[package]]
+name = "agent_settings"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "collections",
+ "fs",
+ "gpui",
+ "language_model",
+ "paths",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_json_lenient",
+ "settings",
+ "workspace-hack",
+ "zed_llm_client",
+]
+
+[[package]]
+name = "agent_ui"
+version = "0.1.0"
+dependencies = [
+ "agent",
+ "agent_settings",
+ "anyhow",
+ "assistant_context",
  "assistant_slash_command",
  "assistant_slash_commands",
  "assistant_tool",
@@ -67,7 +144,6 @@ dependencies = [
  "collections",
  "component",
  "context_server",
- "convert_case 0.8.0",
  "db",
  "editor",
  "extension",
@@ -77,9 +153,7 @@ dependencies = [
  "fs",
  "futures 0.3.31",
  "fuzzy",
- "git",
  "gpui",
- "heed",
  "html_to_markdown",
  "http_client",
  "indexed_docs",
@@ -89,6 +163,7 @@ dependencies = [
  "jsonschema",
  "language",
  "language_model",
+ "languages",
  "log",
  "lsp",
  "markdown",
@@ -99,13 +174,11 @@ dependencies = [
  "parking_lot",
  "paths",
  "picker",
- "postage",
  "pretty_assertions",
  "project",
  "prompt_store",
  "proto",
  "rand 0.8.5",
- "ref-cast",
  "release_channel",
  "rope",
  "rules_library",
@@ -116,7 +189,6 @@ dependencies = [
  "serde_json_lenient",
  "settings",
  "smol",
- "sqlez",
  "streaming_diff",
  "telemetry",
  "telemetry_events",
@@ -124,10 +196,11 @@ dependencies = [
  "terminal_view",
  "text",
  "theme",
- "thiserror 2.0.12",
  "time",
  "time_format",
+ "tree-sitter-md",
  "ui",
+ "unindent",
  "urlencoding",
  "util",
  "uuid",
@@ -135,33 +208,6 @@ dependencies = [
  "workspace",
  "workspace-hack",
  "zed_actions",
- "zed_llm_client",
- "zstd",
-]
-
-[[package]]
-name = "agent_settings"
-version = "0.1.0"
-dependencies = [
- "anthropic",
- "anyhow",
- "collections",
- "deepseek",
- "fs",
- "gpui",
- "language_model",
- "lmstudio",
- "log",
- "mistral",
- "ollama",
- "open_ai",
- "paths",
- "schemars",
- "serde",
- "serde_json",
- "serde_json_lenient",
- "settings",
- "workspace-hack",
  "zed_llm_client",
 ]
 
@@ -508,7 +554,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "assistant_context_editor"
+name = "assistant_context"
 version = "0.1.0"
 dependencies = [
  "agent_settings",
@@ -520,31 +566,23 @@ dependencies = [
  "clock",
  "collections",
  "context_server",
- "editor",
- "feature_flags",
  "fs",
  "futures 0.3.31",
  "fuzzy",
  "gpui",
- "indexed_docs",
  "indoc",
  "language",
  "language_model",
- "languages",
  "log",
- "multi_buffer",
  "open_ai",
- "ordered-float 2.10.1",
  "parking_lot",
  "paths",
- "picker",
  "pretty_assertions",
  "project",
  "prompt_store",
  "proto",
  "rand 0.8.5",
  "regex",
- "rope",
  "rpc",
  "serde",
  "serde_json",
@@ -553,15 +591,12 @@ dependencies = [
  "smol",
  "telemetry_events",
  "text",
- "theme",
- "tree-sitter-md",
  "ui",
  "unindent",
  "util",
  "uuid",
  "workspace",
  "workspace-hack",
- "zed_actions",
  "zed_llm_client",
 ]
 
@@ -2648,6 +2683,7 @@ dependencies = [
  "http_client",
  "language",
  "log",
+ "postage",
  "rand 0.8.5",
  "release_channel",
  "rpc",
@@ -2981,7 +3017,7 @@ version = "0.44.0"
 dependencies = [
  "agent_settings",
  "anyhow",
- "assistant_context_editor",
+ "assistant_context",
  "assistant_slash_command",
  "async-stripe",
  "async-trait",
@@ -4306,6 +4342,7 @@ dependencies = [
  "terminal_view",
  "theme",
  "tree-sitter",
+ "tree-sitter-go",
  "tree-sitter-json",
  "ui",
  "unindent",
@@ -5062,6 +5099,7 @@ version = "0.1.0"
 dependencies = [
  "agent",
  "agent_settings",
+ "agent_ui",
  "anyhow",
  "assistant_tool",
  "assistant_tools",
@@ -8942,6 +8980,7 @@ dependencies = [
  "ui",
  "ui_input",
  "util",
+ "vercel",
  "workspace-hack",
  "zed_llm_client",
 ]
@@ -8980,6 +9019,7 @@ dependencies = [
  "itertools 0.14.0",
  "language",
  "lsp",
+ "picker",
  "project",
  "release_channel",
  "serde_json",
@@ -9197,7 +9237,7 @@ dependencies = [
 [[package]]
 name = "libwebrtc"
 version = "0.3.10"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "cxx",
  "jni",
@@ -9277,7 +9317,7 @@ checksum = "23fb14cb19457329c82206317a5663005a4d404783dc74f4252769b0d5f42856"
 [[package]]
 name = "livekit"
 version = "0.7.8"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "chrono",
  "futures-util",
@@ -9300,7 +9340,7 @@ dependencies = [
 [[package]]
 name = "livekit-api"
 version = "0.4.2"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "futures-util",
  "http 0.2.12",
@@ -9324,7 +9364,7 @@ dependencies = [
 [[package]]
 name = "livekit-protocol"
 version = "0.3.9"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "futures-util",
  "livekit-runtime",
@@ -9341,7 +9381,7 @@ dependencies = [
 [[package]]
 name = "livekit-runtime"
 version = "0.4.0"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "tokio",
  "tokio-stream",
@@ -13123,6 +13163,7 @@ dependencies = [
  "thiserror 2.0.12",
  "urlencoding",
  "util",
+ "which 6.0.3",
  "workspace-hack",
 ]
 
@@ -17382,6 +17423,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
+name = "vercel"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "schemars",
+ "serde",
+ "strum 0.27.1",
+ "workspace-hack",
+]
+
+[[package]]
 name = "version-compare"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18230,7 +18282,7 @@ dependencies = [
 [[package]]
 name = "webrtc-sys"
 version = "0.3.7"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "cc",
  "cxx",
@@ -18243,7 +18295,7 @@ dependencies = [
 [[package]]
 name = "webrtc-sys-build"
 version = "0.3.6"
-source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=80bb8f4c9112789f7c24cc98d8423010977806a6#80bb8f4c9112789f7c24cc98d8423010977806a6"
+source = "git+https://github.com/zed-industries/livekit-rust-sdks?rev=d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4#d2eade7a6b15d6dbdb38ba12a1ff7bf07fcebba4"
 dependencies = [
  "fs2",
  "regex",
@@ -19863,16 +19915,16 @@ dependencies = [
 
 [[package]]
 name = "zed"
-version = "0.193.0"
+version = "0.194.0"
 dependencies = [
  "activity_indicator",
  "agent",
  "agent_settings",
+ "agent_ui",
  "anyhow",
  "ashpd",
  "askpass",
  "assets",
- "assistant_context_editor",
  "assistant_tool",
  "assistant_tools",
  "audio",
@@ -19919,6 +19971,7 @@ dependencies = [
  "inline_completion_button",
  "inspector_ui",
  "install_cli",
+ "itertools 0.14.0",
  "jj_ui",
  "journal",
  "language",
@@ -19943,6 +19996,7 @@ dependencies = [
  "parking_lot",
  "paths",
  "picker",
+ "pretty_assertions",
  "profiling",
  "project",
  "project_panel",
