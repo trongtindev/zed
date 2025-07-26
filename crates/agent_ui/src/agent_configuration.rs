@@ -185,6 +185,13 @@ impl AgentConfiguration {
             None
         };
 
+        let is_signed_in = self
+            .workspace
+            .read_with(cx, |workspace, _| {
+                workspace.client().status().borrow().is_connected()
+            })
+            .unwrap_or(false);
+
         v_flex()
             .w_full()
             .when(is_expanded, |this| this.mb_2())
@@ -233,8 +240,8 @@ impl AgentConfiguration {
                                                     .size(LabelSize::Large),
                                             )
                                             .map(|this| {
-                                                if is_zed_provider {
-                                                    this.gap_2().child(
+                                                if is_zed_provider && is_signed_in {
+                                                    this.child(
                                                         self.render_zed_plan_info(current_plan, cx),
                                                     )
                                                 } else {
@@ -397,9 +404,9 @@ impl AgentConfiguration {
         let fs = self.fs.clone();
 
         SwitchField::new(
-            "single-file-review",
-            "Enable single-file agent reviews",
-            "Agent edits are also displayed in single-file editors for review.",
+            "always-allow-tool-actions-switch",
+            "Allow running commands without asking for confirmation",
+            "The agent can perform potentially destructive actions without asking for your confirmation.",
             always_allow_tool_actions,
             move |state, _window, cx| {
                 let allow = state == &ToggleState::Selected;
